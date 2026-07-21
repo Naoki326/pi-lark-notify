@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { basename, join } from "node:path";
 
 /**
@@ -264,6 +264,85 @@ function cleanupStaleSessions(): void {
   for (const pid of toKill) killPid(pid);
 }
 
+/**
+ * 兜底清理孤儿消费者进程。
+ *
+ * cleanupStaleSessions 只能清理 state 里登记过的 session 对应的消费者。
+ * 但 session_shutdown 会先 delete session 条目再杀进程，一旦 kill 失败（Windows 上
+ * ChildProcess.kill 对已 detach 的子进程可能不生效），消费者就成了 state 里查不到的孤儿，
+ * 永远不会再被清。本函数以「系统里实际存在的 event consume 进程」为依据，杀掉不属于任何
+ * 存活 session 的同类进程，与 cleanupStaleSessions 互补。
+ */
+async function cleanupOrphanConsumers(): Promise<void> {
+  const aliveConsumerPids = new Set<number>();
+  updateState((st) => {
+    for (const info of Object.values(st.sessions)) {
+      if (info.consumerPid && pidAlive(info.consumerPid)) aliveConsumerPids.add(info.consumerPid);
+    }
+  });
+  // 枚举系统里实际存在的 event consume 进程（当前会话 consumer 尚未启动，不会误伤）
+  let orphans: number[] = [];
+  try {
+    orphans = await listConsumerPids();
+  } catch {
+    return; // 枚举失败不阻断启动
+  }
+  for (const pid of orphans) {
+    if (aliveConsumerPids.has(pid)) continue;
+    killPid(pid);
+  }
+}
+
+/**
+ * 枚举本机所有 lark-cli “event consume im.message.receive_v1” 进程的 pid。
+ * 跨平台：Windows 用 PowerShell Get-CimInstance；macOS/Linux 用 pgrep。
+ */
+function listConsumerPids(): Promise<number[]> {
+  const isWin = platform() === "win32";
+  const cmd = isWin ? "powershell" : "pgrep";
+  const args = isWin
+    ? [
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'lark-cli.exe' -and $_.CommandLine -like '*event consume im.message.receive_v1*' } | Select-Object -ExpandProperty ProcessId",
+      ]
+    : ["-af", "lark-cli"];
+  return new Promise((resolve) => {
+    let out = "";
+    let child: ChildProcess;
+    try {
+      child = spawn(cmd, args, { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    } catch {
+      resolve([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch {}
+      resolve([]);
+    }, 8000);
+    child.stdout?.on("data", (d) => (out += d));
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve([]);
+    });
+    child.on("close", () => {
+      clearTimeout(timer);
+      const pids: number[] = [];
+      for (const line of out.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (!isWin) {
+          // pgrep -af 输出形如 “1234 lark-cli event consume ...”，需取首列并校验含 event consume
+          if (!/event\s+consume\s+im\.message\.receive_v1/.test(trimmed)) continue;
+        }
+        const m = trimmed.match(/^\s*(\d+)/);
+        if (m) pids.push(Number(m[1]));
+      }
+      resolve(pids);
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // 扩展主体
 // ---------------------------------------------------------------------------
@@ -453,6 +532,7 @@ export default function larkNotify(pi: ExtensionAPI) {
     if (cfg.enabled === false || (!cfg.userId && !cfg.chatId)) return;
 
     cleanupStaleSessions();
+    await cleanupOrphanConsumers();
     updateState((st) => {
       st.sessions[mySid] = {
         pid: process.pid,
