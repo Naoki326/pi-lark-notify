@@ -245,23 +245,18 @@ function killPid(pid: number): void {
 
 /**
  * 清理过期会话条目及其消费者：
- * - pid 已死的会话；
- * - 同进程但 5 秒前启动的旧实例（/reload 不产生 session_shutdown，
- *   同一 pi-web 进程里的旧扩展实例及其 lark-cli 消费者会残留泄漏）。
- *   不用「pid===process.pid 即杀」是因为 pi-web 模式下同一进程管理多个会话，
- *   那些是活跃的并发会话而非旧实例，不能误杀。
+ * - pid 已死的会话（pi 进程崩溃后残留的 state 条目）。
+ *
+ * 不再处理 /reload 同进程旧实例：pi-web 模式下同一进程管理多个活跃会话，
+ * 无法通过 pid 区分旧实例和并发会话。/reload 残留的旧 consumer 交给
+ * cleanupOrphanConsumers 延迟扫描处理（见 session_start）。
  */
 function cleanupStaleSessions(): void {
-  const now = Date.now();
-  const STALE_AGE_MS = 5000;
   const toKill: number[] = [];
   updateState((st) => {
     for (const [sid, info] of Object.entries(st.sessions)) {
       if (sid === mySid) continue;
-      const dead = !pidAlive(info.pid);
-      const sameProcOld = info.pid === process.pid &&
-        Date.parse(info.startedAt) < now - STALE_AGE_MS;
-      if (dead || sameProcOld) {
+      if (!pidAlive(info.pid)) {
         if (info.consumerPid && pidAlive(info.consumerPid)) toKill.push(info.consumerPid);
         delete st.sessions[sid];
       }
@@ -363,6 +358,7 @@ export default function larkNotify(pi: ExtensionAPI) {
   let shuttingDown = false;
   let restartDelay = 3000;
   let restartTimer: ReturnType<typeof setTimeout> | undefined;
+  let orphanCleanupTimer: ReturnType<typeof setTimeout> | undefined;
 
   const ownNotifications = new Set<string>(); // 本会话发出的通知 message_id
   const seenEvents = new Set<string>(); // 本会话处理过的事件 message_id
@@ -494,6 +490,15 @@ export default function larkNotify(pi: ExtensionAPI) {
     });
   }
 
+  function scheduleOrphanCleanup(): void {
+    if (orphanCleanupTimer) clearTimeout(orphanCleanupTimer);
+    orphanCleanupTimer = setTimeout(() => {
+      orphanCleanupTimer = undefined;
+      cleanupOrphanConsumers().catch(() => {});
+    }, 10000);
+    orphanCleanupTimer.unref?.();
+  }
+
   function scheduleRestart(): void {
     if (shuttingDown || restartTimer) return;
     restartTimer = setTimeout(() => {
@@ -509,6 +514,10 @@ export default function larkNotify(pi: ExtensionAPI) {
     if (restartTimer) {
       clearTimeout(restartTimer);
       restartTimer = undefined;
+    }
+    if (orphanCleanupTimer) {
+      clearTimeout(orphanCleanupTimer);
+      orphanCleanupTimer = undefined;
     }
     const c = consumer;
     consumer = null;
@@ -538,7 +547,6 @@ export default function larkNotify(pi: ExtensionAPI) {
     if (cfg.enabled === false || (!cfg.userId && !cfg.chatId)) return;
 
     cleanupStaleSessions();
-    await cleanupOrphanConsumers();
     updateState((st) => {
       st.sessions[mySid] = {
         pid: process.pid,
@@ -546,6 +554,10 @@ export default function larkNotify(pi: ExtensionAPI) {
         startedAt: new Date().toISOString(),
       };
     });
+
+    // 延迟扫描孤儿 consumer：等所有并发 session_start 完成登记后再清理，
+    // 避免误杀正在启动的其他会话的 consumer。
+    scheduleOrphanCleanup();
 
     if (cfg.replyEnabled !== false) startConsumer();
   });
