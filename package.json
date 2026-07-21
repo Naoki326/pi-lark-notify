@@ -1,0 +1,14 @@
+{
+  "name": "pi-lark-notify",
+  "version": "0.1.0",
+  "description": "pi 主对话 ⇄ 飞书双向桥：主对话完成时发送飞书通知；在飞书里回复通知，内容自动注入对应 pi 会话继续执行。",
+  "keywords": ["pi-package", "pi", "extension", "lark", "feishu", "notify", "bridge"],
+  "license": "MIT",
+  "type": "module",
+  "pi": {
+    "extensions": ["./extensions"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

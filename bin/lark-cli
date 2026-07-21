@@ -1,0 +1,5 @@
+#!/bin/sh
+# lark-cli wrapper: 清除 hermes/openclaw/lark-channel 检测变量，
+# 避免 lark-cli 误判运行环境要求 config bind，凭证走 ~/.lark-cli/config.json
+unset HERMES_HOME HERMES_GIT_BASH_PATH OPENCLAW_HOME LARK_CHANNEL 2>/dev/null
+exec "$HOME/.lark-cli/node_modules/@larksuite/cli/bin/lark-cli.exe" "$@"
