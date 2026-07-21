@@ -32,9 +32,7 @@ pi 完成任务 → 飞书收到通知（含完整回复原文）
 
 ```bash
 pi install npm:@amaster.ai/pi-lark
-pi install git:github.com/<你的账号>/pi-lark-notify   # 推送仓库后
-# 或者直接拷贝本目录到目标机器，按本地路径安装：
-pi install /path/to/pi-lark-notify
+pi install npm:pi-lark-notify
 ```
 
 > **无需手动拷贝 `~/.lark-cli`**：配好 settings.json（下一步）后，首次启动会话时 pi-lark 会自动完成两件事——① 检测不到 lark-cli 时自动 `npm install` 到 `~/.lark-cli`（需联网，约十几秒）；② 将 `pi-lark` 配置写入 `~/.lark-cli/config.json` 凭证文件（0600 权限）。
@@ -104,11 +102,20 @@ lark-cli api POST "/open-apis/contact/v3/users/batch_get_id?user_id_type=open_id
 
 ### 装了 hermes 的机器（可选）
 
-lark-cli 检测到 `HERMES_HOME` 等环境变量会误判运行环境并报 `config bind` 错误。本扩展内部的调用已自动清洗环境变量，不受影响；但**手动或让 agent 使用 lark 技能**时，把本包 `bin/` 下的包装脚本拷到 PATH 靠前的目录（如 `~/bin`）即可根治：
+lark-cli 检测到 `HERMES_HOME` 等环境变量会误判运行环境并报 `config bind` 错误。本扩展内部的调用已自动清洗环境变量，不受影响；但**手动或让 agent 使用 lark 技能**时，需要 lark-cli 包装脚本。该脚本在 npm 包中不包含，从 git 仓库获取：
 
 ```bash
+# 从 git 仓库检出后，拷到 PATH 靠前的目录（如 ~/bin）
 cp bin/lark-cli bin/lark-cli.cmd ~/bin/   # Windows git-bash + cmd 双版本
+# macOS/Linux 只需 cp bin/lark-cli ~/bin/
 ```
+
+## 平台支持
+
+- 理论支持 **Windows / macOS / Linux** 三平台（lark-cli 依赖 `@larksuite/cli` 声明 `os: ['darwin', 'linux', 'win32']`）
+- 进程枚举跨平台：Windows 走 PowerShell `Get-CimInstance`，macOS/Linux 走 `ps axww`
+- **验证状态**：Windows 已充分验证；macOS/Linux 的主流程（发消息、事件监听）应可用，但孤儿 consumer 自愈逻辑未经实测，若 `ps` 不可用或输出格式异常会静默跳过（不影响主功能，仅失去自愈）
+- 若你在 macOS/Linux 上遇到问题，欢迎反馈
 
 ## 工作原理（简述）
 
@@ -131,9 +138,10 @@ pi-lark-notify/
 ├── package.json            # pi 包清单（extensions 声明）
 ├── extensions/
 │   └── lark-notify.ts      # 扩展本体（单文件，零依赖）
-├── bin/                    # 可选：hermes 环境 lark-cli 包装脚本
+├── bin/                    # 仅 git 仓库包含，npm 包不含
 │   ├── lark-cli
 │   └── lark-cli.cmd
+├── LICENSE
 └── README.md
 ```
 

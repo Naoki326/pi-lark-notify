@@ -296,18 +296,19 @@ async function cleanupOrphanConsumers(): Promise<void> {
 
 /**
  * 枚举本机所有 lark-cli “event consume im.message.receive_v1” 进程的 pid。
- * 跨平台：Windows 用 PowerShell Get-CimInstance；macOS/Linux 用 pgrep。
+ * 跨平台：Windows 用 PowerShell Get-CimInstance；macOS/Linux 用 `ps axww`。
+ * （pgrep 不一定预装，`ps` 更通用；`axww` 取全部进程且不限宽，保证命令行完整。）
  */
 function listConsumerPids(): Promise<number[]> {
   const isWin = platform() === "win32";
-  const cmd = isWin ? "powershell" : "pgrep";
+  const cmd = isWin ? "powershell" : "ps";
   const args = isWin
     ? [
         "-NoProfile",
         "-Command",
         "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'lark-cli.exe' -and $_.CommandLine -like '*event consume im.message.receive_v1*' } | Select-Object -ExpandProperty ProcessId",
       ]
-    : ["-af", "lark-cli"];
+    : ["axww", "-o", "pid=,command="];
   return new Promise((resolve) => {
     let out = "";
     let child: ChildProcess;
@@ -333,7 +334,9 @@ function listConsumerPids(): Promise<number[]> {
         const trimmed = line.trim();
         if (!trimmed) continue;
         if (!isWin) {
-          // pgrep -af 输出形如 “1234 lark-cli event consume ...”，需取首列并校验含 event consume
+          // ps 输出形如 "1234 /path/to/lark-cli ... event consume im.message.receive_v1 ..."
+          // 只保留 lark-cli 的 event consume 进程，排除 ps 自身
+          if (!/lark-cli/.test(trimmed)) continue;
           if (!/event\s+consume\s+im\.message\.receive_v1/.test(trimmed)) continue;
         }
         const m = trimmed.match(/^\s*(\d+)/);
