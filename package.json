@@ -4,7 +4,21 @@
   "description": "pi 主对话 ⇄ 飞书双向桥：主对话完成时发送飞书通知；在飞书里回复通知，内容自动注入对应 pi 会话继续执行。",
   "keywords": ["pi-package", "pi", "extension", "lark", "feishu", "notify", "bridge"],
   "license": "MIT",
+  "author": "Naoki326",
+  "homepage": "https://github.com/Naoki326/pi-lark-notify#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Naoki326/pi-lark-notify.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Naoki326/pi-lark-notify/issues"
+  },
   "type": "module",
+  "files": [
+    "extensions/",
+    "README.md",
+    "LICENSE"
+  ],
   "pi": {
     "extensions": ["./extensions"]
   },
