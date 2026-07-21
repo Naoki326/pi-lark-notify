@@ -36,6 +36,8 @@ pi install git:github.com/<你的账号>/pi-lark-notify   # 推送仓库后
 pi install /path/to/pi-lark-notify
 ```
 
+> **无需手动拷贝 `~/.lark-cli`**：配好 settings.json（下一步）后，首次启动会话时 pi-lark 会自动完成两件事——① 检测不到 lark-cli 时自动 `npm install` 到 `~/.lark-cli`（需联网，约十几秒）；② 将 `pi-lark` 配置写入 `~/.lark-cli/config.json` 凭证文件（0600 权限）。
+
 ### 2. 飞书自建应用（可多台机器复用同一个）
 
 在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用，或复用已有的：
