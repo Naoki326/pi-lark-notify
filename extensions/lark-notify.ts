@@ -246,16 +246,22 @@ function killPid(pid: number): void {
 /**
  * 清理过期会话条目及其消费者：
  * - pid 已死的会话；
- * - 与当前实例同进程但 sid 不同的旧实例（/reload 不产生 session_shutdown，
+ * - 同进程但 5 秒前启动的旧实例（/reload 不产生 session_shutdown，
  *   同一 pi-web 进程里的旧扩展实例及其 lark-cli 消费者会残留泄漏）。
+ *   不用「pid===process.pid 即杀」是因为 pi-web 模式下同一进程管理多个会话，
+ *   那些是活跃的并发会话而非旧实例，不能误杀。
  */
 function cleanupStaleSessions(): void {
+  const now = Date.now();
+  const STALE_AGE_MS = 5000;
   const toKill: number[] = [];
   updateState((st) => {
     for (const [sid, info] of Object.entries(st.sessions)) {
       if (sid === mySid) continue;
-      const stale = !pidAlive(info.pid) || info.pid === process.pid;
-      if (stale) {
+      const dead = !pidAlive(info.pid);
+      const sameProcOld = info.pid === process.pid &&
+        Date.parse(info.startedAt) < now - STALE_AGE_MS;
+      if (dead || sameProcOld) {
         if (info.consumerPid && pidAlive(info.consumerPid)) toKill.push(info.consumerPid);
         delete st.sessions[sid];
       }
