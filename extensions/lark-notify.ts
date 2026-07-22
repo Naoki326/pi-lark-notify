@@ -491,6 +491,10 @@ export default function larkNotify(pi: ExtensionAPI) {
       if (consumer === child) consumer = null;
       if (!shuttingDown) scheduleRestart();
     });
+
+    // 每次 spawn 新 consumer 后重新排一次孤儿清理：重启循环里被替换下来的
+    // 旧 consumer（进程还活着但已不在 state 登记的 consumerPid 里）会在 10s 后被清掉
+    scheduleOrphanCleanup();
   }
 
   function scheduleOrphanCleanup(): void {
@@ -598,7 +602,8 @@ export default function larkNotify(pi: ExtensionAPI) {
     const time = new Date().toLocaleString("zh-CN", { hour12: false });
 
     // 完整附上最后一条回复，不截断、不改写（--text 原样发送，保留换行）
-    const lines = [`✅ pi 主对话已完成`, `项目: ${project}`, `时间: ${time}`];
+    // 会话标识：同目录多会话场景下，通知标题一致，靠 sid 前 8 位区分回复目标
+    const lines = [`✅ pi 主对话已完成`, `项目: ${project}`, `会话: ${mySid.slice(0, 8)}`, `时间: ${time}`];
     if (lastAssistantText) lines.push("", lastAssistantText);
     const text = lines.join("\n");
 
