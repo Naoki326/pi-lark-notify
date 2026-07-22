@@ -433,7 +433,7 @@ export default function larkNotify(pi: ExtensionAPI) {
     if (!claimed) return;
 
     // 注入会话（忙时排队，空闲立即触发新一轮）
-    pi.sendUserMessage(`【飞书】${text}`, { deliverAs: "followUp" });
+    pi.sendUserMessage(text, { deliverAs: "followUp" });
 
     if (cfg.receipt !== false) {
       const project = basename(sessionCwd) || sessionCwd;
